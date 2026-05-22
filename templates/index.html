@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatbot RAG - Latinoamérica Comparte</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <main class="page-background">
+        <div class="ambient ambient-one"></div>
+        <div class="ambient ambient-two"></div>
+        <div class="pattern-overlay" aria-hidden="true"></div>
+
+        <section class="hero-content">
+            <span class="eyebrow">Latinoamérica Comparte · RAG</span>
+            <h1>Asistente Latinoamérica Comparte</h1>
+            <p>
+                Asistente virtual de Latinoamérica Comparte, una red regional de transformación humana, social y empresarial.
+                Pregunta por Comparte Academia, Comparte Liderazgo, Comparte Talento y mucho más.
+            </p>
+            <div class="hero-pills" aria-label="Temas principales">
+                <span>Comparte Academia</span>
+                <span>Comparte Liderazgo</span>
+                <span>Comparte Talento</span>
+                <span>Red Latinoamericana</span>
+            </div>
+        </section>
+    </main>
+
+    <button class="chat-launcher hidden" id="chatLauncher" aria-label="Abrir chat" title="Abrir chat">
+        <span class="launcher-glow"></span>
+        <span class="launcher-badge" aria-hidden="true"></span>
+        <img
+            src="{{ url_for('static', filename='img/image.png') }}"
+            alt="Abrir chat Latinoamérica Comparte"
+            class="launcher-icon-img"
+        >
+        <span class="launcher-tooltip">Abrir chat</span>
+    </button>
+
+    <section class="chat-widget" id="chatWidget" aria-label="Tu Asistente Personal">
+        <header class="chat-header">
+            <div class="latam-ribbon" aria-hidden="true"></div>
+
+            <div class="bot-profile">
+                <div class="bot-avatar" aria-hidden="true">
+                    <img src="{{ url_for('static', filename='img/image.png') }}" alt="Latinoamérica Comparte">
+                </div>
+                <div>
+                    <div class="header-kicker">Latinoamérica Comparte</div>
+                    <h2>Tu Asistente Personal</h2>
+                    <p><span class="status-dot"></span> Asistente institucional activo</p>
+                </div>
+            </div>
+
+            <div class="header-actions">
+                <button id="clearChat" class="icon-btn" title="Limpiar chat" aria-label="Limpiar chat">
+                    <span aria-hidden="true">↻</span>
+                </button>
+                <button id="minimizeChat" class="icon-btn" title="Minimizar chat" aria-label="Minimizar chat">
+                    <span aria-hidden="true">−</span>
+                </button>
+            </div>
+        </header>
+
+        <div class="chat-messages" id="chatMessages">
+            <div class="message-row bot-row">
+                <div class="mini-avatar" aria-hidden="true">
+                    <img src="{{ url_for('static', filename='img/image.png') }}" alt="Latinoamérica Comparte">
+                </div>
+                <div class="message-bubble bot-bubble">
+                    ¡Hola! Soy el asistente virtual de Latinoamérica Comparte. Estoy aquí para ayudarte a conocer nuestra red, nuestro propósito y nuestras líneas de acción: Comparte Academia, Comparte Liderazgo y Comparte Talento. ¿Sobre qué te gustaría saber más?
+                </div>
+            </div>
+
+            <div class="quick-actions" id="quickActions">
+                <button data-question="¿Qué es Latinoamérica Comparte?">¿Qué es Latinoamérica Comparte?</button>
+                <button data-question="¿Qué es Comparte Academia?">Comparte Academia</button>
+                <button data-question="¿Qué es Comparte Liderazgo?">Comparte Liderazgo</button>
+                <button data-question="¿Qué es Comparte Talento?">Comparte Talento</button>
+                <button data-question="¿A quiénes acompaña Latinoamérica Comparte?">A quiénes acompaña</button>
+                <button data-question="¿En qué países está presente Latinoamérica Comparte?">Países de la red</button>
+            </div>
+        </div>
+
+        <form class="chat-form" id="chatForm">
+            <input
+                type="text"
+                id="messageInput"
+                placeholder="Escribe tu pregunta..."
+                autocomplete="off"
+                aria-label="Pregunta para el chatbot"
+            >
+            <button type="submit" aria-label="Enviar pregunta" title="Enviar">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M3.4 20.4 21 12 3.4 3.6 5 10.6 13 12 5 13.4l-1.6 7Z"></path>
+                </svg>
+            </button>
+        </form>
+    </section>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
+    <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
+</body>
+</html>
