@@ -1,78 +1,67 @@
-# 🌎 Chatbot RAG — Latinoamérica Comparte
+# 🌎 RAG Chatbot — Latin America Shares
 
-Chatbot con arquitectura RAG (Retrieval-Augmented Generation) para Latinoamérica Comparte.  
-Usa la lógica de chunking y embeddings del proyecto del profesor y la interfaz visual del equipo de desarrollo.
+Chatbot with a RAG architecture (Retrieval-Augmented Generation) for Latin America Shares.  
+It uses the chunking and embeddings logic from the professor’s project and the visual interface developed by the team.
 
 ---
 
-## Estructura del proyecto
+## Project Structure
 
-```
+
 proyecto_final/
-├── app.py                        # Servidor Flask
+├── app.py # Flask server
 ├── requirements.txt
 ├── ejecutar_linux_mac.sh
 ├── ejecutar_windows.bat
 ├── data/
-│   ├── raw/                      # Documentos fuente (.txt, .pdf, .docx)
-│   └── processed/
-│       ├── chunks.jsonl          # Chunks generados
-│       └── embeddings.npy        # Embeddings numpy
+│ ├── raw/ # Source documents (.txt, .pdf, .docx)
+│ └── processed/
+│ ├── chunks.jsonl # Generated chunks
+│ └── embeddings.npy # NumPy embeddings
 ├── indexes/
-│   └── faiss.index               # Índice FAISS
+│ └── faiss.index # FAISS index
 ├── scripts/
-│   └── build_knowledge_base.py  # Genera chunks + embeddings + FAISS
+│ └── build_knowledge_base.py # Generates chunks + embeddings + FAISS
 ├── src/rag/
-│   ├── text_cleaner.py           # Limpieza de texto
-│   ├── chunker.py                # Chunking semántico (lógica del profe)
-│   ├── document_loader.py        # Carga de .txt, .pdf, .docx
-│   ├── embeddings.py             # Embeddings multilingüe
-│   ├── vector_store.py           # FAISS index
-│   ├── retriever.py              # Búsqueda semántica
-│   ├── generator.py              # Generación con Qwen
-│   └── pipeline.py               # Pipeline completo + filtros anti-alucinación
+│ ├── text_cleaner.py # Text cleaning
+│ ├── chunker.py # Semantic chunking (professor’s logic)
+│ ├── document_loader.py # Loads .txt, .pdf, .docx files
+│ ├── embeddings.py # Multilingual embeddings
+│ ├── vector_store.py # FAISS index
+│ ├── retriever.py # Semantic search
+│ ├── generator.py # Generation with Qwen
+│ └── pipeline.py # Full pipeline + anti-hallucination filters
 ├── static/
-│   ├── css/styles.css            # Paleta morada Latinoamérica Comparte
-│   └── js/chat.js
+│ ├── css/styles.css # Latin America Shares purple color palette
+│ └── js/chat.js
 └── templates/
-    └── index.html
-```
+└── index.html
+
 
 ---
 
-## Cómo ejecutar
+## How to Run
 
 ### Linux / macOS
+
 ```bash
 chmod +x ejecutar_linux_mac.sh
 ./ejecutar_linux_mac.sh
-```
-
-### Windows
-```
+Windows
 ejecutar_windows.bat
-```
 
-Luego abre: **http://127.0.0.1:5000**
+Then open: http://127.0.0.1:5000
 
----
+Adding Documents
 
-## Agregar documentos
+Place your .txt, .pdf, or .docx files inside data/raw/ and run again:
 
-Coloca tus archivos `.txt`, `.pdf` o `.docx` en `data/raw/` y vuelve a correr:
-
-```bash
 cd scripts
 python build_knowledge_base.py --download-model
-```
-
----
-
-## Características
-
-- **Chunking semántico** con detección de límites de sección, overlapping y validación
-- **Embeddings multilingüe** con `paraphrase-multilingual-MiniLM-L12-v2`
-- **Índice FAISS** con similaridad coseno
-- **Generación Qwen2.5-0.5B-Instruct** con prompt estricto
-- **Anti-alucinación**: filtro de dominio, verificación de ground truth, fallback controlado
-- **UI morada** con identidad visual de Latinoamérica Comparte
+Features
+Semantic chunking with section boundary detection, overlapping, and validation
+Multilingual embeddings using paraphrase-multilingual-MiniLM-L12-v2
+FAISS index with cosine similarity
+Qwen2.5-0.5B-Instruct generation with a strict prompt
+Anti-hallucination system: domain filter, ground truth verification, and controlled fallback response
+Purple UI based on the visual identity of Latin America Shares
