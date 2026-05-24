@@ -42,8 +42,9 @@ DOMAIN_KEYWORDS = [
     "dinero consciente", "aula", "solicitudes", "dian",
 ]
 CONTACT_KEYWORDS = [
-    "contacto", "telefono", "numero", "correo", "comunicar", "llamar",
-    "como los contacto", "datos de contacto",
+    "contacto", "contactar", "telefono", "numero", "correo", "comunicar", "llamar",
+    "como los contacto", "datos de contacto", "escribirles", "hablar con ellos",
+    "encontrarlos", "ubicarlos", "donde estan", "sede",
 ]
 DONATION_KEYWORDS = [
     "donar", "donacion", "donaciones", "cuenta bancaria", "transferencia",
