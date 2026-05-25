@@ -21,7 +21,7 @@ class ChunkingConfig:
     min_words: int = 35
     target_words: int = 140
     max_words: int = 240
-    overlap_sentences: int = 1
+    overlap_sentences: int = 0
 
 
 def build_chunks(text: str, source: str, config: ChunkingConfig | None = None) -> list[Chunk]:
@@ -297,6 +297,19 @@ def _is_editorial_paragraph(paragraph: str) -> bool:
     if upper in exact_noise:
         return True
 
+    # Secciones de meta-instrucciones: el section title y su contenido quedan en
+    # un solo párrafo tras el split por líneas en blanco. Se filtra por prefijo.
+    meta_section_prefixes = (
+        "TONO DEL CHATBOT",
+        "REGLAS DEL CHATBOT",
+        "DONACIONES",
+        "RESPUESTA CUANDO NO HAY INFORMA",
+        "MENSAJE DE BIENVENIDA",
+        "FRASES CLAVE",
+    )
+    if any(upper.startswith(prefix) for prefix in meta_section_prefixes):
+        return True
+
     noise_patterns = [
         r"^Eliminar\b",
         r"^Cambiar\b",
@@ -323,6 +336,15 @@ def _is_editorial_paragraph(paragraph: str) -> bool:
         r"^\d+\.\s*Direccionar\b",
         r"^\d+\.\s*En el pie de pagina\b",
         r"^Documento preparado para sistemas\b",
+        # Instrucciones de tono/reglas del chatbot embebidas en el doc fuente
+        r"^El chatbot debe\b",
+        r"^No debe mencionar\b",
+        r"^No debe entregar\b",
+        r"^Cuando el usuario pregunte\b",
+        r"^Si alguien pregunta\b",
+        r"^Si el usuario pregunta\b",
+        r"^Para recibir informaci",
+        r"^Gracias por tu pregunta\.",
     ]
     return any(re.search(pattern, normalized, flags=re.IGNORECASE) for pattern in noise_patterns)
 
@@ -361,6 +383,14 @@ def _is_section_boundary(paragraph: str) -> bool:
         return True
 
     if re.match(r"^(SECCIÓN\s+\d+|SLIDE\s+\d+|BANNERS[-\s]|PROGRAMAS\.|CONTACTO$|AULA$)", upper):
+        return True
+
+    # Cada línea principal de Latinoamérica Comparte merece su propio chunk
+    # para que el retriever pueda distinguirlas con precisión.
+    if re.match(r"^COMPARTE\s+(ACADEMIA|LIDERAZGO|TALENTO)\b", upper):
+        return True
+
+    if re.match(r"^(DESKUBRE|ESTRUCTURA)\s*\(", upper):
         return True
 
     if re.match(r"^[💼🚀🔸]\s*", normalized):

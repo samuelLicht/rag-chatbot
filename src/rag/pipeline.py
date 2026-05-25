@@ -87,10 +87,10 @@ QUERY_EXPANSIONS: list[tuple[list[str], str]] = [
         ["programa", "programas", "lineas", "linea de accion", "lineas de accion",
          "que ofrecen", "que tienen", "que hacen", "describe", "describeme",
          "cuales son", "cada uno"],
-        "Comparte Academia Comparte Liderazgo Comparte Talento DESKUBRE ESTRUCTURA",
+        "Comparte Academia Comparte Liderazgo Comparte Talento tres lineas principales",
     ),
     (
-        ["academia", "formacion", "aprendizaje", "capacitacion", "cursos"],
+        ["academia", "formacion", "aprendizaje", "capacitacion", "cursos", "deskubre", "estructura"],
         "Comparte Academia DESKUBRE ESTRUCTURA emprendimiento",
     ),
     (
@@ -157,11 +157,11 @@ def _is_echo(query: str, answer: str) -> bool:
 
 def _split_questions(query: str) -> list[str]:
     """Divide una consulta compuesta en sub-preguntas individuales."""
-    # Partir por ? (preguntas con signos)
+    # Partir por ? (preguntas con signos de interrogación)
     parts = re.split(r"\?", query)
     questions = []
     for part in parts:
-        part = re.sub(r"^[\s,;]+", "", part)
+        part = re.sub(r"^[\s,;¿]+", "", part)
         part = re.sub(r"^(y\s+|también\s+|tambien\s+|además\s+|ademas\s+)", "", part, flags=re.IGNORECASE).strip()
         if len(part) > 5:
             questions.append(part)
@@ -169,9 +169,9 @@ def _split_questions(query: str) -> list[str]:
     if len(questions) >= 2:
         return questions
 
-    # Sin signos de ?, detectar conectores "y que/y qué/y cuál/y cual"
+    # Sin signos de ?, detectar conectores fuertes: "y qué/cuál/cómo/cuántos/dónde/quiénes"
     connector_split = re.split(
-        r"\s+y\s+(que\s+|qué\s+|cual\s+|cuál\s+|cómo\s+|como\s+|en\s+que\s+|en\s+qué\s+)",
+        r"\s+y\s+(que\s+|qué\s+|cual\s+|cuál\s+|cómo\s+|como\s+|cuantos?\s+|cuántos?\s+|donde\s+|dónde\s+|quienes?\s+|quiénes?\s+|en\s+que\s+|en\s+qué\s+)",
         query,
         flags=re.IGNORECASE,
     )
@@ -181,7 +181,6 @@ def _split_questions(query: str) -> list[str]:
         while i < len(connector_split):
             chunk = connector_split[i].strip()
             if i + 1 < len(connector_split):
-                # el token capturado (que/qué/cuál…) va pegado al siguiente fragmento
                 chunk_next = (connector_split[i + 1] + connector_split[i + 2]).strip() if i + 2 < len(connector_split) else connector_split[i + 1].strip()
                 rebuilt.append(chunk)
                 rebuilt.append(chunk_next)
@@ -192,6 +191,17 @@ def _split_questions(query: str) -> list[str]:
         rebuilt = [q for q in rebuilt if len(q) > 5]
         if len(rebuilt) >= 2:
             return rebuilt
+
+    # Detectar "también [pregunta]" o "además [pregunta]" como segunda parte
+    also_split = re.split(
+        r"\s*[,;]\s*(también\s+|tambien\s+|además\s+|ademas\s+|y\s+también\s+|y\s+tambien\s+)",
+        query,
+        flags=re.IGNORECASE,
+    )
+    if len(also_split) >= 2:
+        parts2 = [p.strip() for p in also_split if len(p.strip()) > 5 and not re.match(r"^(también|tambien|además|ademas|y\s)", p.strip(), re.IGNORECASE)]
+        if len(parts2) >= 2:
+            return parts2
 
     return [query]
 
@@ -221,6 +231,26 @@ class LatamChatbot:
         if not query or not query.strip():
             return "Por favor escribe una pregunta sobre Latinoamérica Comparte."
 
+        sub_questions = _split_questions(query)
+
+        if len(sub_questions) >= 2:
+            answers = []
+            for sq in sub_questions:
+                ans = self._answer_single(sq.strip())
+                if ans and ans != FALLBACK_ANSWER:
+                    answers.append(ans)
+                elif ans == FALLBACK_ANSWER:
+                    answers.append(ans)
+
+            real = [a for a in answers if a != FALLBACK_ANSWER]
+            if real:
+                return "\n\n".join(real)
+            return FALLBACK_ANSWER
+
+        return self._answer_single(query)
+
+    def _answer_single(self, query: str) -> str:
+        """Responde una sola pregunta simple."""
         # Atajos rápidos sin RAG
         if _matches(query, DONATION_KEYWORDS):
             return DONATION_MSG
@@ -245,24 +275,12 @@ class LatamChatbot:
         if not _matches(query, DOMAIN_KEYWORDS):
             return FALLBACK_ANSWER
 
-        # Recuperación — búsqueda por sub-pregunta cuando hay preguntas compuestas
-        sub_questions = _split_questions(query)
-        if len(sub_questions) >= 2:
-            seen_ids: set[str] = set()
-            results = []
-            for sq in sub_questions:
-                expanded_sq = _expand_query(sq)
-                for r in retrieve_context(expanded_sq, self.chunks, self.index, self.embedding_model, top_k=3, min_score=0.20):
-                    if r["id"] not in seen_ids:
-                        results.append(r)
-                        seen_ids.add(r["id"])
-            results.sort(key=lambda x: x["score"], reverse=True)
-        else:
-            expanded_query = _expand_query(query)
-            results = retrieve_context(
-                expanded_query, self.chunks, self.index, self.embedding_model,
-                top_k=5, min_score=0.20,
-            )
+        # Recuperación
+        expanded_query = _expand_query(query)
+        results = retrieve_context(
+            expanded_query, self.chunks, self.index, self.embedding_model,
+            top_k=7, min_score=0.20,
+        )
         context = format_context(results, max_chars=4000)
 
         if not context:
@@ -272,14 +290,12 @@ class LatamChatbot:
         self._load_generator()
         answer = generate_answer(
             query, context, self.tokenizer, self.generation_model,
-            num_questions=len(sub_questions),
+            num_questions=1,
         )
 
         # Validación anti-alucinación
         if _is_echo(query, answer) or not _is_grounded(answer, context):
-            # Fallback: devolver el chunk más relevante limpio
             top = results[0]["text"] if results else ""
-            # Eliminar encabezados markdown y prefijos en MAYÚSCULAS (ej. "IDENTIDAD GENERAL Texto...")
             top = re.sub(r"^#{1,6}\s+.+$", "", top, flags=re.MULTILINE)
             top = re.sub(r"^[A-ZÁÉÍÓÚÑ]{3,}(?:\s+[A-ZÁÉÍÓÚÑ]{1,})*\s+(?=[A-Za-záéíóúñ])", "", top, flags=re.MULTILINE)
             top = re.sub(r"\n{3,}", "\n\n", top).strip()
