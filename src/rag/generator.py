@@ -42,11 +42,12 @@ def generate_answer(
     temperature: float = 0.1,
     top_p: float = 0.9,
     num_questions: int = 1,
+    history: list | None = None,
 ) -> str:
     if not context.strip():
         return FALLBACK_ANSWER
 
-    prompt = _build_messages(query, context, num_questions=num_questions)
+    prompt = _build_messages(query, context, num_questions=num_questions, history=history or [])
     if num_questions >= 2:
         max_new_tokens = min(max_new_tokens * num_questions, 600)
     inputs = tokenizer.apply_chat_template(
@@ -73,7 +74,7 @@ def generate_answer(
     return _clean_answer(answer)
 
 
-def _build_messages(query: str, context: str, num_questions: int = 1) -> list[dict]:
+def _build_messages(query: str, context: str, num_questions: int = 1, history: list | None = None) -> list[dict]:
     if num_questions >= 2:
         length_instruction = (
             f"La pregunta contiene {num_questions} partes. "
@@ -103,10 +104,18 @@ def _build_messages(query: str, context: str, num_questions: int = 1) -> list[di
         f"Pregunta del usuario:\n{query}\n\n"
         "Respuesta (responde SOLO lo que se preguntó, usando el contexto):"
     )
-    return [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_prompt},
-    ]
+
+    messages: list[dict] = [{"role": "system", "content": system_prompt}]
+
+    # Inyectar turnos previos de la conversación para dar contexto al LLM
+    for turn in (history or []):
+        role = turn.get("role", "")
+        content = turn.get("content", "").strip()
+        if role in ("user", "assistant") and content:
+            messages.append({"role": role, "content": content})
+
+    messages.append({"role": "user", "content": user_prompt})
+    return messages
 
 
 def _clean_answer(answer: str) -> str:
