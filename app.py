@@ -35,7 +35,10 @@ def chat():
         if not RAG_READY:
             return jsonify({"answer": "El motor RAG no está disponible. Revisa la consola."}), 500
 
-        answer = chatbot_response(message)
+        history = data.get("history", [])
+        if not isinstance(history, list):
+            history = []
+        answer = chatbot_response(message, history=history)
         return jsonify({"answer": answer})
 
     except Exception as error:

@@ -79,6 +79,14 @@ SENSITIVE_KEYWORDS = [
     "fecha exacta", "certificado", "nit", "contrasena", "sede fisica",
 ]
 
+# Indicadores de que la pregunta es un follow-up que depende del contexto previo
+FOLLOWUP_INDICATORS = [
+    "cada uno", "cada una", "ellos", "ellas", "eso", "esto", "ese", "esa",
+    "dime mas", "dime más", "cuentame mas", "cuéntame más", "ampliar",
+    "mas sobre", "más sobre", "y los", "y las", "y el", "y la",
+    "en que se diferencian", "en qué se diferencian", "diferencia entre",
+]
+
 # Expansiones de query: cuando la pregunta contiene alguna de las palabras clave,
 # se anexan términos específicos al embedding de búsqueda para mejorar el recall
 # sin modificar la pregunta original que llega al generador.
@@ -122,6 +130,31 @@ def _expand_query(query: str) -> str:
     if expansions:
         return f"{query} {' '.join(expansions)}"
     return query
+
+
+def _is_followup(query: str, history: list) -> bool:
+    """Detecta si la pregunta es una continuación de una conversación previa."""
+    if not history:
+        return False
+    q = _normalize(query)
+    words = q.split()
+    if len(words) <= 8 and any(_normalize(fi) in q for fi in FOLLOWUP_INDICATORS):
+        return True
+    return False
+
+
+def _get_history_context(history: list) -> str:
+    """Extrae el texto de los últimos mensajes del usuario del historial."""
+    user_msgs = [m.get("content", "") for m in history if m.get("role") == "user"]
+    return " ".join(user_msgs[-2:])  # últimas 2 preguntas del usuario
+
+
+def _history_has_domain(history: list) -> bool:
+    """Verifica si algún mensaje reciente del usuario tocó temas del dominio."""
+    for msg in history[-6:]:
+        if msg.get("role") == "user" and _matches(msg.get("content", ""), DOMAIN_KEYWORDS):
+            return True
+    return False
 
 
 def _normalize(text: str) -> str:
@@ -227,16 +260,17 @@ class LatamChatbot:
         self.tokenizer = None
         self.generation_model = None
 
-    def ask(self, query: str) -> str:
+    def ask(self, query: str, history: list | None = None) -> str:
         if not query or not query.strip():
             return "Por favor escribe una pregunta sobre Latinoamérica Comparte."
 
+        history = history or []
         sub_questions = _split_questions(query)
 
         if len(sub_questions) >= 2:
             answers = []
             for sq in sub_questions:
-                ans = self._answer_single(sq.strip())
+                ans = self._answer_single(sq.strip(), history=history)
                 if ans and ans != FALLBACK_ANSWER:
                     answers.append(ans)
                 elif ans == FALLBACK_ANSWER:
@@ -247,10 +281,12 @@ class LatamChatbot:
                 return "\n\n".join(real)
             return FALLBACK_ANSWER
 
-        return self._answer_single(query)
+        return self._answer_single(query, history=history)
 
-    def _answer_single(self, query: str) -> str:
+    def _answer_single(self, query: str, history: list | None = None) -> str:
         """Responde una sola pregunta simple."""
+        history = history or []
+
         # Atajos rápidos sin RAG
         if _matches(query, DONATION_KEYWORDS):
             return DONATION_MSG
@@ -271,12 +307,23 @@ class LatamChatbot:
         if _matches(query, SENSITIVE_KEYWORDS):
             return FALLBACK_ANSWER
 
-        # Filtro de dominio
-        if not _matches(query, DOMAIN_KEYWORDS):
-            return FALLBACK_ANSWER
+        # Filtro de dominio — se relaja si la pregunta es un follow-up de una
+        # conversación que ya tocó el dominio
+        in_domain = _matches(query, DOMAIN_KEYWORDS)
+        if not in_domain:
+            is_followup = _is_followup(query, history) and _history_has_domain(history)
+            if not is_followup:
+                return FALLBACK_ANSWER
+
+        # Si es un follow-up con query corta, enriquecer la búsqueda con el contexto previo
+        retrieval_query = query
+        if _is_followup(query, history):
+            prior_ctx = _get_history_context(history)
+            if prior_ctx:
+                retrieval_query = f"{prior_ctx} {query}"
 
         # Recuperación
-        expanded_query = _expand_query(query)
+        expanded_query = _expand_query(retrieval_query)
         results = retrieve_context(
             expanded_query, self.chunks, self.index, self.embedding_model,
             top_k=7, min_score=0.20,
@@ -290,6 +337,7 @@ class LatamChatbot:
         self._load_generator()
         answer = generate_answer(
             query, context, self.tokenizer, self.generation_model,
+            history=history,
             num_questions=1,
         )
 
@@ -323,5 +371,5 @@ def get_chatbot() -> LatamChatbot:
     return _chatbot_instance
 
 
-def chatbot_response(query: str) -> str:
-    return get_chatbot().ask(query)
+def chatbot_response(query: str, history: list | None = None) -> str:
+    return get_chatbot().ask(query, history=history or [])
