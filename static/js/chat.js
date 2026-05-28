@@ -9,6 +9,9 @@ const messageInput = document.getElementById("messageInput");
 const initialHTML = chatMessages.innerHTML;
 const STORAGE_KEY = "colombiaComparteChatMinimized";
 
+const conversationHistory = [];
+const MAX_HISTORY_TURNS = 5;
+
 function scrollToBottom() {
     chatMessages.scrollTop = chatMessages.scrollHeight;
 }
@@ -117,12 +120,13 @@ async function sendMessage(message) {
     addTyping();
 
     try {
+        const historyToSend = conversationHistory.slice(-(MAX_HISTORY_TURNS * 2));
         const response = await fetch("/chat", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json"
             },
-            body: JSON.stringify({ message: cleanMessage })
+            body: JSON.stringify({ message: cleanMessage, history: historyToSend })
         });
 
         const data = await response.json();
@@ -131,7 +135,10 @@ async function sendMessage(message) {
         if (!response.ok) {
             addMessage(data.answer || "Ocurrió un error al procesar la pregunta.", "bot");
         } else {
-            addMessage(data.answer || "No recibí respuesta del servidor.", "bot");
+            const botAnswer = data.answer || "No recibí respuesta del servidor.";
+            addMessage(botAnswer, "bot");
+            conversationHistory.push({ role: "user", content: cleanMessage });
+            conversationHistory.push({ role: "assistant", content: botAnswer });
         }
     } catch (error) {
         removeTyping();
@@ -160,6 +167,7 @@ chatLauncher.addEventListener("click", openWidget);
 clearChat.addEventListener("click", () => {
     chatMessages.innerHTML = initialHTML;
     messageInput.value = "";
+    conversationHistory.length = 0;
     messageInput.focus();
     scrollToBottom();
 });
