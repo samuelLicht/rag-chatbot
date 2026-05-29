@@ -42,14 +42,13 @@ def retrieve_context(
     return results
 
 
-def format_context(results: list[dict], max_chars: int = 4000) -> str:
+def format_context(results: list[dict], max_chars: int = 6000) -> str:
     """Format retrieved chunks for a generation prompt."""
     context_blocks = []
     used_chars = 0
 
     for result in results:
-        # Keep source ids in the prompt so the model receives separated evidence blocks.
-        block = f"[{result['id']} | score={result['score']:.4f}]\n{result['text']}"
+        block = result["text"].strip()
         if used_chars + len(block) > max_chars:
             break
         context_blocks.append(block)
