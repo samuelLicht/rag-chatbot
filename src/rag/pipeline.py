@@ -27,6 +27,18 @@ SELF_INTRO = (
     "personal o empresarial. Puedes preguntarme lo que necesites."
 )
 
+# Keywords para detectar preguntas sobre los programas en general (para ajustar num_questions)
+PROGRAMS_LIST_KEYWORDS = [
+    "cuales son los programas", "cuales son las lineas", "que programas tienen",
+    "los 3 programas", "los tres programas", "3 programas", "tres programas",
+    "sus programas", "sus lineas", "lineas de accion", "lineas principales",
+    "programas que hay", "cuantos programas", "que programas", "que lineas",
+]
+PROGRAMS_EXPLAIN_KEYWORDS = [
+    "explicame los programas", "explicame las lineas", "describe los programas",
+    "describe cada", "explica cada", "en que consiste cada", "habla de cada",
+]
+
 DOMAIN_KEYWORDS = [
     "latinoamerica comparte", "colombia comparte", "comparte academia",
     "comparte liderazgo", "comparte talento", "edifica", "nodus", "top speakers",
@@ -85,6 +97,15 @@ FOLLOWUP_INDICATORS = [
     "dime mas", "dime más", "cuentame mas", "cuéntame más", "ampliar",
     "mas sobre", "más sobre", "y los", "y las", "y el", "y la",
     "en que se diferencian", "en qué se diferencian", "diferencia entre",
+    # Pronombres clíticos en español (verbos + me/lo/la/los/las)
+    "explicamelos", "explicamelas", "explicame", "explicalos", "explicalas",
+    "describemelos", "describemelas", "describeme", "describelos", "describelas",
+    "cuentamelos", "cuentamelas", "cuentamelo", "cuentamela",
+    "muestramelos", "muestramelas", "muestrame",
+    "hablame", "hablame de ellos", "hablame de eso",
+    "dime sobre", "dime de", "dime algo",
+    "cuales son esos", "cuales son esas", "y esos", "y esas",
+    "como son", "en que consisten", "de que tratan",
 ]
 
 # Expansiones de query: cuando la pregunta contiene alguna de las palabras clave,
@@ -132,6 +153,10 @@ def _expand_query(query: str) -> str:
     return query
 
 
+_CLITIC_SUFFIX_RE = re.compile(
+    r"\b\w+(melos?|melas?|melo|mela|los?|las?|nos|les|me)\b"
+)
+
 def _is_followup(query: str, history: list) -> bool:
     """Detecta si la pregunta es una continuación de una conversación previa."""
     if not history:
@@ -140,19 +165,39 @@ def _is_followup(query: str, history: list) -> bool:
     words = q.split()
     if len(words) <= 8 and any(_normalize(fi) in q for fi in FOLLOWUP_INDICATORS):
         return True
+    # Detectar verbos con pronombres clíticos adjuntos (e.g. "explicamelos", "describelos")
+    if len(words) <= 5 and _CLITIC_SUFFIX_RE.search(q):
+        return True
     return False
 
 
 def _get_history_context(history: list) -> str:
-    """Extrae el texto de los últimos mensajes del usuario del historial."""
-    user_msgs = [m.get("content", "") for m in history if m.get("role") == "user"]
-    return " ".join(user_msgs[-2:])  # últimas 2 preguntas del usuario
+    """Extrae el texto de los últimos turnos completos (usuario + asistente) para enriquecer la búsqueda."""
+    relevant = []
+    for m in history[-6:]:  # últimos 3 turnos (6 mensajes)
+        content = m.get("content", "").strip()
+        if content:
+            relevant.append(content)
+    return " ".join(relevant)
 
 
 def _history_has_domain(history: list) -> bool:
     """Verifica si algún mensaje reciente del usuario tocó temas del dominio."""
     for msg in history[-6:]:
         if msg.get("role") == "user" and _matches(msg.get("content", ""), DOMAIN_KEYWORDS):
+            return True
+    return False
+
+
+def _history_mentioned_programs(history: list) -> bool:
+    """Verifica si el historial reciente habló de los 3 programas principales."""
+    program_markers = [
+        "comparte academia", "comparte liderazgo", "comparte talento",
+        "programas", "lineas", "tres lineas", "3 lineas",
+    ]
+    for msg in history[-6:]:
+        content = _normalize(msg.get("content", ""))
+        if any(_normalize(m) in content for m in program_markers):
             return True
     return False
 
@@ -239,6 +284,89 @@ def _split_questions(query: str) -> list[str]:
     return [query]
 
 
+# Patrón que detecta cuando DESKUBRE o ESTRUCTURA aparecen como ítem de lista de nivel superior
+# (indica que Qwen los confundió con programas principales en vez de sub-programas)
+_PROGRAMS_HALLUCINATION_RE = re.compile(
+    r"^\s*[\d\-\*•]\s*\.?\s*(deskubre|estructura)[^\n]*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def _is_programs_hallucination(answer: str) -> bool:
+    """Detecta si la respuesta lista DESKUBRE/ESTRUCTURA como programas principales."""
+    return bool(_PROGRAMS_HALLUCINATION_RE.search(answer))
+
+
+def _extract_programs_from_context(context: str) -> str:
+    """Extrae las descripciones de los 3 programas directamente del contexto recuperado.
+    Fallback cuando Qwen alucina — usa el texto de los chunks, no strings hardcodeados."""
+    PROGRAMS = ["Comparte Academia", "Comparte Liderazgo", "Comparte Talento"]
+    blocks = context.split("---")
+    parts = []
+
+    for prog in PROGRAMS:
+        prog_norm = _normalize(prog)
+        for block in blocks:
+            if prog_norm not in _normalize(block):
+                continue
+            # Limpiar encabezados en mayúsculas del chunk
+            cleaned = re.sub(r"^[A-ZÁÉÍÓÚÑ\s]{6,}\n", "", block.strip(), flags=re.MULTILINE)
+            cleaned = re.sub(r"\s+", " ", cleaned).strip()
+            # Tomar las primeras 3 oraciones con sentido
+            sentences = re.split(r"(?<=[.!?])\s+", cleaned)
+            good = [s.strip() for s in sentences if len(s.strip()) > 20 and s.strip()[-1] in ".!?"]
+            if good:
+                excerpt = " ".join(good[:3])
+                parts.append(f"**{prog}**: {excerpt}")
+                break
+
+    if parts:
+        return "\n\n".join(parts)
+    # Fallback: primer bloque limpio
+    first = blocks[0].strip() if blocks else context
+    sentences = re.split(r"(?<=[.!?])\s+", first)
+    clean = [s.strip() for s in sentences if s.strip() and s.strip()[-1] in ".!?"]
+    return " ".join(clean[:4]) if clean else FALLBACK_ANSWER
+
+
+def _build_programs_explain_from_chunks(results: list[dict]) -> str:
+    """Construye la explicación de los 3 programas directamente desde los chunks RAG.
+    Evita que Qwen sintetice y alucine cuando la pregunta pide describir cada programa."""
+    PROGRAMS = ["Comparte Academia", "Comparte Liderazgo", "Comparte Talento"]
+    found: dict[str, str] = {}
+
+    for result in results:
+        text = result["text"].strip()
+        # Solo considerar chunks donde el programa es el TEMA PRINCIPAL
+        # (aparece en las primeras 60 caracteres del chunk, como encabezado)
+        header = _normalize(text[:60])
+        for prog in PROGRAMS:
+            if prog in found:
+                continue
+            if _normalize(prog) not in header:
+                continue
+            # Quitar líneas de encabezado en MAYÚSCULAS del inicio
+            lines = text.split("\n")
+            body_lines = [l for l in lines if not re.match(r"^[A-ZÁÉÍÓÚÑ\s\(\)]{6,}$", l.strip())]
+            body = re.sub(r"\s+", " ", " ".join(body_lines)).strip()
+            # Quitar prefijo en MAYÚSCULAS pegado al inicio (ej: "COMPARTE ACADEMIA Comparte...")
+            body = re.sub(r"^[A-ZÁÉÍÓÚÑ]{3,}(?:\s+[A-ZÁÉÍÓÚÑ]{2,})*\s+", "", body)
+            sentences = re.split(r"(?<=[.!?])\s+", body)
+            good = [s.strip() for s in sentences if len(s.strip()) > 25 and s.strip()[-1] in ".!?"]
+            if good:
+                found[prog] = " ".join(good[:3])
+
+    if not found:
+        return ""
+
+    parts = []
+    for prog in PROGRAMS:
+        if prog in found:
+            parts.append(f"**{prog}**: {found[prog]}")
+
+    return "\n\n".join(parts)
+
+
 # ─── Pipeline principal ───────────────────────────────────────────────────────
 class LatamChatbot:
     """Pipeline RAG completo: recuperación + generación con Qwen."""
@@ -322,34 +450,54 @@ class LatamChatbot:
             if prior_ctx:
                 retrieval_query = f"{prior_ctx} {query}"
 
+        # Determinar si la pregunta pide explicar los 3 programas
+        is_programs_explain = (
+            _matches(query, PROGRAMS_EXPLAIN_KEYWORDS)
+            or (_is_followup(query, history) and _history_mentioned_programs(history)
+                and not _matches(query, PROGRAMS_LIST_KEYWORDS))
+        )
+        is_programs_list = _matches(query, PROGRAMS_LIST_KEYWORDS) and not is_programs_explain
+        num_q = 3 if (is_programs_explain or is_programs_list) else 1
+
         # Recuperación
         expanded_query = _expand_query(retrieval_query)
         results = retrieve_context(
             expanded_query, self.chunks, self.index, self.embedding_model,
-            top_k=7, min_score=0.20,
+            top_k=10, min_score=0.20,
         )
-        context = format_context(results, max_chars=4000)
+        context = format_context(results, max_chars=6000)
 
         if not context:
             return FALLBACK_ANSWER
 
-        # Generación
+        # Para preguntas que piden explicar los 3 programas, construir la respuesta
+        # directamente desde los chunks recuperados — evita alucinaciones de Qwen
+        if is_programs_explain:
+            chunk_answer = _build_programs_explain_from_chunks(results)
+            if chunk_answer:
+                return chunk_answer
+
+        generation_query = retrieval_query if retrieval_query != query else query
         self._load_generator()
         answer = generate_answer(
-            query, context, self.tokenizer, self.generation_model,
+            generation_query, context, self.tokenizer, self.generation_model,
             history=history,
-            num_questions=1,
+            num_questions=num_q,
         )
 
-        # Validación anti-alucinación
-        if _is_echo(query, answer) or not _is_grounded(answer, context):
+        # Validación: detectar alucinación de programas (DESKUBRE o ESTRUCTURA listados como programa principal)
+        if _is_programs_hallucination(answer):
+            answer = _extract_programs_from_context(context)
+
+        # Validación anti-alucinación general
+        if _is_echo(generation_query, answer) or not _is_grounded(answer, context):
             top = results[0]["text"] if results else ""
             top = re.sub(r"^#{1,6}\s+.+$", "", top, flags=re.MULTILINE)
             top = re.sub(r"^[A-ZÁÉÍÓÚÑ]{3,}(?:\s+[A-ZÁÉÍÓÚÑ]{1,})*\s+(?=[A-Za-záéíóúñ])", "", top, flags=re.MULTILINE)
             top = re.sub(r"\n{3,}", "\n\n", top).strip()
             sentences = re.split(r"(?<=[.!?])\s+", top)
             clean = [s.strip() for s in sentences if s.strip() and s.strip()[-1] in ".!?"]
-            return " ".join(clean[:3]).strip() if clean else FALLBACK_ANSWER
+            return " ".join(clean[:4]).strip() if clean else FALLBACK_ANSWER
 
         return answer.strip() if answer and answer.strip() else FALLBACK_ANSWER
 
