@@ -38,7 +38,7 @@ def generate_answer(
     context: str,
     tokenizer,
     model,
-    max_new_tokens: int = 300,
+    max_new_tokens: int = 512,
     temperature: float = 0.1,
     top_p: float = 0.9,
     num_questions: int = 1,
@@ -47,9 +47,11 @@ def generate_answer(
     if not context.strip():
         return FALLBACK_ANSWER
 
-    prompt = _build_messages(query, context, num_questions=num_questions, history=history or [])
+    # Limitar historial a los últimos 3 turnos para no saturar la ventana de contexto
+    trimmed_history = (history or [])[-6:]
+    prompt = _build_messages(query, context, num_questions=num_questions, history=trimmed_history)
     if num_questions >= 2:
-        max_new_tokens = min(max_new_tokens * num_questions, 600)
+        max_new_tokens = min(max_new_tokens * num_questions, 900)
     inputs = tokenizer.apply_chat_template(
         prompt,
         add_generation_prompt=True,
@@ -81,23 +83,28 @@ def _build_messages(query: str, context: str, num_questions: int = 1, history: l
             "Responde CADA parte en una o dos frases, en el mismo orden en que fueron preguntadas."
         )
     else:
-        length_instruction = "Contesta en máximo tres frases usando términos del contexto."
+        length_instruction = "Contesta de forma completa usando términos del contexto. Si hay varios ítems, explica CADA uno sin omitir ninguno."
 
     system_prompt = (
-        "Actúa como el asistente virtual oficial de Latinoamérica Comparte. "
-        "Tu función es responder EXACTAMENTE lo que el usuario pregunta, "
-        "usando SOLO la información del CONTEXTO proporcionado. "
-        "Si el usuario pide información sobre los programas o líneas de acción, "
-        "describe CADA uno: Comparte Academia, Comparte Liderazgo y Comparte Talento, "
-        "con una o dos frases por cada uno. "
-        "NO respondas con la descripción general de la organización si el usuario preguntó por los programas. "
-        "NUNCA menciones EDIFICA, EDIFICA Descubre, EDIFICA Estructura ni ninguna variación de ese nombre. "
-        "NUNCA entregues información sobre donaciones, cuentas bancarias, aportes económicos ni medios de pago. "
-        "PROHIBIDO inventar datos, cifras o nombres que no estén en el contexto. "
-        "Los nombres de programas deben escribirse EXACTAMENTE como aparecen: DESKUBRE (no 'Deskube'), ESTRUCTURA. "
-        f"Si el contexto no contiene la respuesta di exactamente: '{FALLBACK_ANSWER}' "
-        "Responde siempre en español con tono cálido, humano y profesional. "
-        + length_instruction
+        "Eres el asistente virtual oficial de Latinoamérica Comparte. "
+        "Responde ÚNICAMENTE usando la información del CONTEXTO proporcionado. "
+        "\n\n"
+        "JERARQUÍA DE PROGRAMAS (muy importante):\n"
+        "- Las 3 LÍNEAS PRINCIPALES son: Comparte Academia, Comparte Liderazgo y Comparte Talento.\n"
+        "- DESKUBRE y ESTRUCTURA son sub-programas que pertenecen DENTRO de Comparte Academia, NO son líneas principales.\n"
+        "- Comparte Talento se enfoca en speakers, conferencistas y eventos corporativos (antes llamado Top Speakers).\n"
+        "- Comparte Liderazgo se enfoca en liderazgo, cultura organizacional y desarrollo humano en empresas.\n"
+        "\n"
+        "REGLAS:\n"
+        "- Cuando el usuario pregunte por los programas o líneas, SIEMPRE menciona las 3 líneas principales: "
+        "Comparte Academia, Comparte Liderazgo, Comparte Talento.\n"
+        "- NUNCA listes DESKUBRE o ESTRUCTURA como si fueran líneas principales.\n"
+        "- NUNCA menciones EDIFICA ni ninguna variación de ese nombre.\n"
+        "- NUNCA inventes datos, cifras o nombres que no estén en el contexto.\n"
+        "- NUNCA entregues información sobre donaciones o cuentas bancarias.\n"
+        f"- Si el contexto no contiene la respuesta, di exactamente: '{FALLBACK_ANSWER}'\n"
+        "- Responde en español con tono cálido y profesional.\n"
+        "- " + length_instruction
     )
     user_prompt = (
         f"Contexto recuperado:\n{context}\n\n"
@@ -160,7 +167,7 @@ def _clean_answer(answer: str) -> str:
     sentences = re.split(r"(?<=[.!?])\s+", answer)
     complete = [s.strip() for s in sentences if s.strip() and s.strip()[-1] in ".!?"]
     if complete:
-        answer = " ".join(complete[:6]).strip()
+        answer = " ".join(complete[:12]).strip()
     elif answer and answer[-1] not in ".!?":
         answer += "."
     return answer.strip() or FALLBACK_ANSWER
